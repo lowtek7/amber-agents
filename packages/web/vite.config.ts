@@ -8,6 +8,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: true, // bind 0.0.0.0 so other tailnet devices (phone) can reach dev
+    // Vite blocks requests whose Host header it doesn't recognize (DNS-rebinding
+    // protection). We're reached by Tailscale hostname (e.g. ganymede-macmini),
+    // which varies per machine — allow any host since access is already gated by
+    // the tailnet. Restrict to e.g. [".ts.net", "localhost"] if you prefer.
+    allowedHosts: true,
     port: 3000,
     strictPort: true,
     proxy: {
