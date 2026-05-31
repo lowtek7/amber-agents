@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import type { SessionInfo } from "@amber/shared";
 import type { ConnStatus } from "./ws";
 
@@ -9,6 +9,12 @@ interface SidebarProps {
   onSelect: (id: string) => void;
   onCreate: (agent: string | undefined) => void;
   onKill: (id: string) => void;
+  /** phone layout: render as a slide-in drawer */
+  mobile: boolean;
+  /** whether the drawer is shown (always true on desktop) */
+  open: boolean;
+  /** close the drawer (mobile only) */
+  onClose: () => void;
 }
 
 const STATUS_COLOR: Record<ConnStatus, string> = {
@@ -24,27 +30,70 @@ export function Sidebar({
   onSelect,
   onCreate,
   onKill,
+  mobile,
+  open,
+  onClose,
 }: SidebarProps) {
   const [cmd, setCmd] = useState("");
 
+  const base: CSSProperties = {
+    width: 250,
+    flex: "0 0 auto",
+    borderRight: "1px solid #333",
+    display: "flex",
+    flexDirection: "column",
+    background: "#181818",
+  };
+  const mobileStyle: CSSProperties = mobile
+    ? {
+        position: "fixed",
+        top: 0,
+        left: 0,
+        bottom: 0,
+        width: "78vw",
+        maxWidth: 300,
+        zIndex: 30,
+        transform: open ? "translateX(0)" : "translateX(-100%)",
+        transition: "transform 0.2s ease",
+        boxShadow: open ? "0 0 24px rgba(0,0,0,0.5)" : "none",
+      }
+    : {};
+
   return (
-    <aside
-      style={{
-        width: 250,
-        flex: "0 0 auto",
-        borderRight: "1px solid #333",
-        display: "flex",
-        flexDirection: "column",
-        background: "#181818",
-      }}
-    >
-      <div style={{ padding: "10px 12px", borderBottom: "1px solid #333" }}>
-        <div style={{ fontSize: 13 }}>
-          amber-agents <span style={{ opacity: 0.4 }}>· phase 1</span>
+    <aside style={{ ...base, ...mobileStyle }}>
+      <div
+        style={{
+          padding: "10px 12px",
+          borderBottom: "1px solid #333",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13 }}>
+            amber-agents <span style={{ opacity: 0.4 }}>· phase 1</span>
+          </div>
+          <div style={{ fontSize: 11, marginTop: 4, color: STATUS_COLOR[status] }}>
+            ● {status}
+          </div>
         </div>
-        <div style={{ fontSize: 11, marginTop: 4, color: STATUS_COLOR[status] }}>
-          ● {status}
-        </div>
+        {mobile && (
+          <button
+            aria-label="close menu"
+            onClick={onClose}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "#888",
+              fontSize: 18,
+              lineHeight: 1,
+              cursor: "pointer",
+            }}
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       <form
@@ -64,6 +113,9 @@ export function Sidebar({
           value={cmd}
           onChange={(e) => setCmd(e.target.value)}
           placeholder="command (빈칸이면 셸)"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
           style={{
             flex: 1,
             minWidth: 0,
@@ -71,8 +123,8 @@ export function Sidebar({
             color: "#ddd",
             border: "1px solid #333",
             borderRadius: 4,
-            padding: "5px 7px",
-            fontSize: 12,
+            padding: "7px 8px",
+            fontSize: 13,
           }}
         />
         <button
@@ -83,9 +135,9 @@ export function Sidebar({
             color: "white",
             border: "none",
             borderRadius: 4,
-            padding: "0 10px",
+            padding: "0 12px",
             cursor: "pointer",
-            fontSize: 15,
+            fontSize: 16,
           }}
         >
           ＋
@@ -101,7 +153,7 @@ export function Sidebar({
             key={s.id}
             onClick={() => onSelect(s.id)}
             style={{
-              padding: "8px 12px",
+              padding: "10px 12px",
               cursor: "pointer",
               background: s.id === activeId ? "#2a2d2e" : "transparent",
               borderBottom: "1px solid #232323",
@@ -154,8 +206,9 @@ export function Sidebar({
                 border: "none",
                 color: "#888",
                 cursor: "pointer",
-                fontSize: 14,
+                fontSize: 15,
                 lineHeight: 1,
+                padding: 4,
               }}
             >
               ✕

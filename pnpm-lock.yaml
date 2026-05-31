@@ -47,6 +47,12 @@ importers:
 
   packages/web:
     dependencies:
+      '@fontsource/jetbrains-mono':
+        specifier: ^5.2.8
+        version: 5.2.8
+      '@fontsource/nanum-gothic-coding':
+        specifier: ^5.2.8
+        version: 5.2.8
       '@xterm/addon-fit':
         specifier: ^0.10.0
         version: 0.10.0(@xterm/xterm@5.5.0)
@@ -475,6 +481,12 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@fontsource/jetbrains-mono@5.2.8':
+    resolution: {integrity: sha512-6w8/SG4kqvIMu7xd7wt6x3idn1Qux3p9N62s6G3rfldOUYHpWcc2FKrqf+Vo44jRvqWj2oAtTHrZXEP23oSKwQ==}
+
+  '@fontsource/nanum-gothic-coding@5.2.8':
+    resolution: {integrity: sha512-K4bfKS8lSnVvAcGq0mbHKSddxalm+wgmQxhggbmdK/76RRrf72SOWPAWyESuu/m1pXgNmM8ekhuCY7yADBGfqA==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -1255,6 +1267,10 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.0':
     optional: true
+
+  '@fontsource/jetbrains-mono@5.2.8': {}
+
+  '@fontsource/nanum-gothic-coding@5.2.8': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

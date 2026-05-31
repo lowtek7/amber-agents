@@ -5,24 +5,35 @@ import "@xterm/xterm/css/xterm.css";
 import type { ServerMessage, SessionInfo } from "@amber/shared";
 import { conn } from "./ws";
 
+const FONT_FAMILY =
+  "'JetBrains Mono', 'Nanum Gothic Coding', ui-monospace, SFMono-Regular, Menlo, monospace";
+
 /**
  * Renders one session. Mounted with `key={session.id}` from App, so switching
  * sessions tears this down and builds a fresh terminal: on mount it attaches
  * (server replays a snapshot, then streams live output) and on unmount it
  * detaches. Keystrokes and size changes are sent back scoped to this session.
  */
-export function TerminalView({ session }: { session: SessionInfo }) {
+export function TerminalView({
+  session,
+  showHeader = true,
+}: {
+  session: SessionInfo;
+  showHeader?: boolean;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     const sid = session.id;
+    let disposed = false;
 
     const term = new Terminal({
       cursorBlink: true,
-      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-      fontSize: 13,
+      fontFamily: FONT_FAMILY,
+      fontSize: 14,
+      fontWeightBold: 700,
       theme: { background: "#1e1e1e" },
     });
     const fit = new FitAddon();
@@ -31,6 +42,7 @@ export function TerminalView({ session }: { session: SessionInfo }) {
     fit.fit();
 
     const syncSize = () => {
+      if (disposed) return;
       fit.fit();
       conn.send({ type: "resize", sessionId: sid, cols: term.cols, rows: term.rows });
     };
@@ -56,8 +68,11 @@ export function TerminalView({ session }: { session: SessionInfo }) {
     );
     window.addEventListener("resize", syncSize);
     const raf = requestAnimationFrame(syncSize);
+    // web fonts load async; re-measure once they're ready so cell metrics match
+    document.fonts?.ready.then(syncSize);
 
     return () => {
+      disposed = true;
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", syncSize);
       onData.dispose();
@@ -69,22 +84,26 @@ export function TerminalView({ session }: { session: SessionInfo }) {
 
   return (
     <>
-      <header
-        style={{
-          padding: "8px 12px",
-          color: "#ddd",
-          fontSize: 13,
-          borderBottom: "1px solid #333",
-          display: "flex",
-          gap: 8,
-          alignItems: "baseline",
-        }}
-      >
-        <span>{session.title}</span>
-        <span style={{ fontSize: 11, opacity: 0.45 }}>
-          {session.state === "running" ? session.cwd : `exited (${session.exitCode ?? "?"})`}
-        </span>
-      </header>
+      {showHeader && (
+        <header
+          style={{
+            padding: "8px 12px",
+            color: "#ddd",
+            fontSize: 13,
+            borderBottom: "1px solid #333",
+            display: "flex",
+            gap: 8,
+            alignItems: "baseline",
+          }}
+        >
+          <span>{session.title}</span>
+          <span style={{ fontSize: 11, opacity: 0.45 }}>
+            {session.state === "running"
+              ? session.cwd
+              : `exited (${session.exitCode ?? "?"})`}
+          </span>
+        </header>
+      )}
       <div ref={containerRef} style={{ flex: 1, minHeight: 0, padding: 4 }} />
     </>
   );
