@@ -1,0 +1,21 @@
+{
+  "name": "amber-agents",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Self-hosted control plane for remote CLI agents (Phase 0)",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n daemon,web -c blue,green \"pnpm dev:daemon\" \"pnpm dev:web\"",
+    "dev:daemon": "pnpm --filter @amber/daemon dev",
+    "dev:web": "pnpm --filter @amber/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "postinstall": "node scripts/fix-node-pty.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["node-pty"]
+  }
+}
