@@ -1,17 +1,38 @@
 /**
  * Wire protocol shared between daemon and web.
  *
- * Phase 0: a single hardcoded session. There is no sessionId yet — the daemon
- * owns exactly one PTY and every connected client mirrors it. When we move to
- * multi-session (Phase 1), these message types grow a `sessionId` field.
+ * Phase 1: multiple sessions multiplexed over a single /ws connection. Every
+ * session-scoped message carries a `sessionId`. A client subscribes to a
+ * session's live output with `attach` (which first replays a `snapshot`) and
+ * stops with `detach`. The session list is pushed to all clients on every
+ * change.
  */
 
-/** daemon -> browser */
-export type ServerMessage =
-  | { type: "output"; data: string }
-  | { type: "exit"; code: number };
+export type SessionState = "running" | "exited";
+
+export interface SessionInfo {
+  id: string;
+  title: string;
+  /** the spawned command, e.g. "zsh" or "claude" */
+  agent: string;
+  cwd: string;
+  state: SessionState;
+  createdAt: number;
+  exitCode?: number;
+}
 
 /** browser -> daemon */
 export type ClientMessage =
-  | { type: "input"; data: string }
-  | { type: "resize"; cols: number; rows: number };
+  | { type: "create"; agent?: string; cwd?: string; title?: string }
+  | { type: "attach"; sessionId: string }
+  | { type: "detach"; sessionId: string }
+  | { type: "input"; sessionId: string; data: string }
+  | { type: "resize"; sessionId: string; cols: number; rows: number }
+  | { type: "kill"; sessionId: string };
+
+/** daemon -> browser */
+export type ServerMessage =
+  | { type: "sessions"; sessions: SessionInfo[] }
+  | { type: "snapshot"; sessionId: string; data: string }
+  | { type: "output"; sessionId: string; data: string }
+  | { type: "exit"; sessionId: string; code: number };

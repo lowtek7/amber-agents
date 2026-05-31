@@ -3,18 +3,27 @@
 Self-hosted control plane for remote CLI agents (Claude Code, Codex, …).
 CLI-first, accessed from anywhere over a Tailscale tailnet.
 
-## Status: Phase 0 — walking skeleton
+## Status: Phase 1 — multi-session
 
-One hardcoded terminal session, mirrored end-to-end:
+Multiple PTY sessions, managed from one dashboard and multiplexed over a single
+`/ws`:
 
 ```
-shell/agent (PTY)  ──output──►  /ws  ──►  xterm.js (browser/phone)
-        ▲                                       │
-        └──────────────── input/resize ◄────────┘
+session A (PTY) ─┐                           ┌─ sidebar: list + create + kill
+session B (PTY) ─┼─ headless xterm (snapshot)┤
+session C (PTY) ─┘        │                  └─ terminal: attach → snapshot → live
+                          ▼
+                  /ws  ◄────►  xterm.js (browser/phone)
 ```
 
-Not yet: multiple sessions, scrollback replay on reconnect, state badges,
-notifications, auth. Those are Phase 1+.
+- create / kill sessions from the sidebar (type a command, or leave blank for a shell)
+- a client that connects late gets a **snapshot replay** (full screen, not just
+  output-from-now) — switch sessions or reopen on your phone and history is there
+- disconnecting never kills a session; the agent keeps running
+- `GET /api/sessions` returns the session list as JSON
+
+Not yet: state inference (generating / waiting-approval) badges, notifications,
+auth, restart-survival (session-host process split). Those are Phase 2+.
 
 ## Layout
 
@@ -31,9 +40,9 @@ pnpm install
 pnpm dev          # daemon on :3847, web on :3000 (both, via concurrently)
 ```
 
-Open http://localhost:3000. A shell appears; type into it.
-
-Point it at a real agent instead of a shell:
+Open http://localhost:3000. One session is created for you; make more from the
+sidebar — type a command like `claude` (blank = a shell), click ＋, and switch
+between them. Set the daemon's default command/cwd with env vars:
 
 ```bash
 AGENT_CMD=claude AGENT_CWD=~/some/project pnpm dev:daemon

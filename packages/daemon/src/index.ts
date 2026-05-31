@@ -1,56 +1,62 @@
 /**
- * agentd — Phase 0 walking skeleton.
+ * agentd — Phase 1.
  *
- * One hardcoded PTY session, streamed to every connected browser over a single
- * /ws WebSocket. Proves the riskiest path end-to-end:
+ * Multiple PTY sessions multiplexed over one /ws connection.
  *
- *   shell (PTY)  ──output──►  ws  ──►  xterm.js
- *        ▲                                  │
- *        └──────────── input/resize ◄───────┘
+ *   create / kill        -> SessionManager spawns / terminates a PTY
+ *   attach <id>          -> server replays a snapshot, then streams live output
+ *   input / resize <id>  -> forwarded to that session's PTY
  *
- * Not in Phase 0 (intentionally): multiple sessions, scrollback replay on
- * reconnect, write-ownership between clients, auth. Those land in Phase 1+.
+ * The session list is pushed to every client on change. A disconnecting client
+ * never kills sessions — that's the whole point (close your phone, the agent
+ * keeps working). `GET /api/sessions` exposes the list for scripting.
  */
 
 import { createServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
-import pty from "node-pty";
 import type { ClientMessage, ServerMessage } from "@amber/shared";
+import { SessionManager } from "./session-manager.js";
 
 const PORT = Number(process.env.PORT ?? 3847);
 const HOST = process.env.HOST ?? "127.0.0.1";
 
-// Phase 0: swap this for `claude` / `codex` via AGENT_CMD once the plumbing is
-// proven with a plain shell.
-const AGENT_CMD =
-  process.env.AGENT_CMD ??
-  (process.platform === "win32" ? "powershell.exe" : process.env.SHELL ?? "zsh");
-const CWD = process.env.AGENT_CWD ?? process.env.HOME ?? process.cwd();
-
-const term = pty.spawn(AGENT_CMD, [], {
-  name: "xterm-color",
-  cols: 80,
-  rows: 24,
-  cwd: CWD,
-  env: process.env as Record<string, string>,
-});
-
-const clients = new Set<WebSocket>();
+/** ws -> set of sessionIds it is subscribed to */
+const clients = new Map<WebSocket, Set<string>>();
 
 function broadcast(msg: ServerMessage): void {
   const payload = JSON.stringify(msg);
-  for (const ws of clients) {
+  for (const ws of clients.keys()) {
     if (ws.readyState === WebSocket.OPEN) ws.send(payload);
   }
 }
 
-term.onData((data) => broadcast({ type: "output", data }));
-term.onExit(({ exitCode }) => broadcast({ type: "exit", code: exitCode }));
+function sendToSubscribers(sessionId: string, msg: ServerMessage): void {
+  const payload = JSON.stringify(msg);
+  for (const [ws, subs] of clients) {
+    if (subs.has(sessionId) && ws.readyState === WebSocket.OPEN) ws.send(payload);
+  }
+}
+
+const manager = new SessionManager({
+  onOutput: (sessionId, data) =>
+    sendToSubscribers(sessionId, { type: "output", sessionId, data }),
+  onExit: (sessionId, code) =>
+    sendToSubscribers(sessionId, { type: "exit", sessionId, code }),
+  onChange: () => broadcast({ type: "sessions", sessions: manager.list() }),
+});
+
+// Start with one ready-to-use session so the dashboard isn't empty on first load.
+manager.create();
 
 const httpServer = createServer((req, res) => {
   if (req.url === "/health") {
     res.writeHead(200, { "content-type": "text/plain" });
     res.end("ok");
+    return;
+  }
+  if (req.url === "/api/sessions") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(manager.list()));
     return;
   }
   res.writeHead(404);
@@ -60,7 +66,8 @@ const httpServer = createServer((req, res) => {
 const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
 
 wss.on("connection", (ws) => {
-  clients.add(ws);
+  clients.set(ws, new Set());
+  ws.send(JSON.stringify({ type: "sessions", sessions: manager.list() } satisfies ServerMessage));
 
   ws.on("message", (raw) => {
     let msg: ClientMessage;
@@ -69,16 +76,50 @@ wss.on("connection", (ws) => {
     } catch {
       return;
     }
+    const subs = clients.get(ws);
     switch (msg.type) {
+      case "create":
+        try {
+          manager.create({ agent: msg.agent, cwd: msg.cwd, title: msg.title });
+        } catch (e) {
+          console.error("create failed:", (e as Error).message);
+        }
+        break;
+      case "attach": {
+        // Synchronous on purpose: serialize + send the snapshot, THEN subscribe.
+        // No PTY 'data' event can interleave mid-handler (single-threaded), so
+        // the client never misses bytes or double-renders them.
+        const snap = manager.snapshot(msg.sessionId);
+        if (snap != null) {
+          ws.send(
+            JSON.stringify({
+              type: "snapshot",
+              sessionId: msg.sessionId,
+              data: snap,
+            } satisfies ServerMessage),
+          );
+        }
+        subs?.add(msg.sessionId);
+        break;
+      }
+      case "detach":
+        subs?.delete(msg.sessionId);
+        break;
       case "input":
-        term.write(msg.data);
+        manager.write(msg.sessionId, msg.data);
         break;
       case "resize":
-        // Phase 0 caveat: with multiple viewers the last resize wins. Single
-        // write-owner arbitration is a Phase 1+ concern.
-        if (Number.isInteger(msg.cols) && Number.isInteger(msg.rows)) {
-          term.resize(msg.cols, msg.rows);
+        if (
+          Number.isInteger(msg.cols) &&
+          Number.isInteger(msg.rows) &&
+          msg.cols > 0 &&
+          msg.rows > 0
+        ) {
+          manager.resize(msg.sessionId, msg.cols, msg.rows);
         }
+        break;
+      case "kill":
+        manager.kill(msg.sessionId);
         break;
     }
   });
@@ -89,16 +130,12 @@ wss.on("connection", (ws) => {
 
 httpServer.listen(PORT, HOST, () => {
   console.log(
-    `agentd listening on http://${HOST}:${PORT}  ·  ws path /ws  ·  cmd "${AGENT_CMD}" in ${CWD}`,
+    `agentd listening on http://${HOST}:${PORT}  ·  ws /ws  ·  GET /api/sessions`,
   );
 });
 
 function shutdown(): void {
-  try {
-    term.kill();
-  } catch {
-    /* noop */
-  }
+  manager.disposeAll();
   httpServer.close();
   process.exit(0);
 }
